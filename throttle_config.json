@@ -1,0 +1,12 @@
+{
+    "interface": "YOUR_INTERFACE_HERE",  // Например, "wlan1" или "eth0"
+    "router_ip": "YOUR_ROUTER_IP_HERE",  // Например, "192.168.1.1"
+    "target_devices": ["DEVICE_IP_1", "DEVICE_IP_2"],  // Список IP-адресов устройств или CIDR-диапазоны
+    "roblox_ip_ranges": ["IP_RANGE_1", "IP_RANGE_2"],  // Диапазоны IP-адресов серверов Roblox
+    "roblox_ports": ["PORT_1", "PORT_2"],  // Порты, используемые Roblox
+    "dns_block": ["DOMAIN_1", "DOMAIN_2"],  // Домены для блокировки
+    "tiktok_ip_ranges": ["IP_RANGE_1", "IP_RANGE_2"],  // Диапазоны IP-адресов серверов TikTok
+    "tiktok_dns": ["DOMAIN_1", "DOMAIN_2"],  // Домены TikTok для блокировки
+    "block_udp": true,  // Блокировать ли UDP-трафик (true/false)
+    "block_dns": true   // Блокировать ли DNS-запросы (true/false)
+}
