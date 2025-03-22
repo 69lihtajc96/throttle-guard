@@ -1,12 +1,34 @@
 {
-    "interface": "YOUR_INTERFACE_HERE",  // Например, "wlan1" или "eth0"
-    "router_ip": "YOUR_ROUTER_IP_HERE",  // Например, "192.168.1.1"
-    "target_devices": ["DEVICE_IP_1", "DEVICE_IP_2"],  // Список IP-адресов устройств или CIDR-диапазоны
-    "roblox_ip_ranges": ["IP_RANGE_1", "IP_RANGE_2"],  // Диапазоны IP-адресов серверов Roblox
-    "roblox_ports": ["PORT_1", "PORT_2"],  // Порты, используемые Roblox
-    "dns_block": ["DOMAIN_1", "DOMAIN_2"],  // Домены для блокировки
-    "tiktok_ip_ranges": ["IP_RANGE_1", "IP_RANGE_2"],  // Диапазоны IP-адресов серверов TikTok
-    "tiktok_dns": ["DOMAIN_1", "DOMAIN_2"],  // Домены TikTok для блокировки
-    "block_udp": true,  // Блокировать ли UDP-трафик (true/false)
-    "block_dns": true   // Блокировать ли DNS-запросы (true/false)
+    "interface": "wlan1",
+    "router_ip": "192.168.1.1",
+    "target_devices": ["192.168.1.0/24"],
+    "dns_block": [
+        "roblox.com",
+        "www.roblox.com",
+        "api.roblox.com",
+        "games.roblox.com",
+        "setup.roblox.com",
+        "assetgame.roblox.com",
+        "presence.roblox.com"
+    ],
+    "roblox_ip_ranges": [
+        "128.116.0.0/16",
+        "185.221.0.0/16",
+        "23.82.0.0/16",
+        "45.10.0.0/16",
+        "103.252.0.0/16"
+    ],
+    "tiktok_ip_ranges": [
+        "47.244.0.0/16",
+        "123.206.0.0/16"
+    ],
+    "tiktok_dns": [
+        "tiktok.com",
+        "www.tiktok.com",
+        "api.tiktok.com",
+        "m.tiktok.com",
+        "m.tiktokcdn.com"
+    ],
+    "block_udp": true,
+    "block_dns": true
 }
