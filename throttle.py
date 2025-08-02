@@ -1,146 +1,121 @@
 import subprocess
 import logging
-import json
+import ipaddress
 
 # Логирование
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Загружаем конфиг
-CONFIG_FILE = "throttle_config.json"
+class BaseLocker:
+    interface: str = "wlan1"
+    target_devices_list: list
+    dns_list: list
+    ip_list: list
 
-def load_config():
-    """Загружает настройки из файла."""
-    try:
-        with open(CONFIG_FILE, "r") as file:
-            return json.load(file)
-    except FileNotFoundError:
-        logging.error("Файл конфигурации не найден!")
-        return {}
+    block_udp: bool = True
+    block_dns: bool = True
 
-config = load_config()
+    def lock(self):
+        logging.info(f"⛔ Блокируем доступ к {self.__class__.__name__} для выбранных устройств...")
+        # 1) Запускаем ARP-спуфинг, чтобы трафик шел через нас
+        self.enable_arp_spoofing()
+        # 2) Чистим все правила
+        self.run_command("sudo iptables -F")
 
-# Настройки
-INTERFACE = config.get("interface", "eno1")
-ROUTER_IP = config.get("router_ip", "192.168.1.1")
-TARGET_DEVICES = config.get("target_devices", [])
-ROBLOX_IP_RANGES = config.get("roblox_ip_ranges", [])
-ROBLOX_PORTS = config.get("roblox_ports", [])
-DNS_BLOCK = config.get("dns_block", [])
-TIKTOK_IP_RANGES = config.get("tiktok_ip_ranges", [])
-TIKTOK_DNS = config.get("tiktok_dns", [])
-BLOCK_UDP = config.get("block_udp", True)
-BLOCK_DNS = config.get("block_dns", True)
+        # 3) Добавляем DROP-правила для IP-диапазонов
+        for device_ip in self.target_devices_list:
+            for ip in self.ip_list:
+                self.run_command(f"sudo iptables -A FORWARD -s {device_ip} -d {ip} -j DROP")
+                self.run_command(f"sudo iptables -A OUTPUT -s {device_ip} -d {ip} -j DROP")
+                if self.block_udp:
+                    self.run_command(f"sudo iptables -A FORWARD -s {device_ip} -p udp -d {ip} -j DROP")
+                    self.run_command(f"sudo iptables -A OUTPUT -s {device_ip} -p udp -d {ip} -j DROP")
 
-def run_command(cmd):
-    """Выполняет команду в терминале и логирует её выполнение."""
-    try:
-        subprocess.run(cmd, shell=True, check=True)
-        logging.info(f"✅ {cmd}")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"❌ Ошибка: {e}")
+        # 4) Блокируем DNS через /etc/hosts
+        if self.block_dns:
+            for domain in self.dns_list:
+                self.run_command(f"echo '127.0.0.1 {domain}' | sudo tee -a /etc/hosts")
 
-def enable_arp_spoofing():
-    """Запускаем ARP-спуфинг ТОЛЬКО для выбранных устройств."""
-    logging.info(f"🚀 Перенаправляем трафик через {INTERFACE} для {TARGET_DEVICES}...")
-    for device_ip in TARGET_DEVICES:
-        run_command(f"cd ~/Programs/bettercap && sudo go run main.go -eval 'set arp.spoof.targets {device_ip}; arp.spoof on' &")
+        # 5) Перезапускаем резолвер и чистим кэш
+        self.run_command("sudo systemctl restart systemd-resolved")
+        self.run_command("sudo resolvectl flush-caches")
 
-def disable_arp_spoofing():
-    """Останавливаем ARP-спуфинг."""
-    logging.info("⛔ Останавливаем ARP-спуфинг...")
-    run_command("sudo pkill bettercap")
+        logging.info(f"✅ {self.__class__.__name__} уничтожен для выбранных устройств!")
 
-def block_roblox():
-    """Полностью блокируем трафик Roblox ТОЛЬКО для указанных устройств."""
-    logging.info("⛔ Блокируем доступ к Roblox для выбранных устройств...")
+    def unlock(self):
+        logging.info(f"⛔ Отключаем блокировку {self.__class__.__name__}...")
+        # 1) Чистим правила
+        self.run_command("sudo iptables -F")
+        # 2) Останавливаем ARP-спуфинг
+        self.disable_arp_spoofing()
 
-    # Очищаем старые правила
-    run_command("sudo iptables -F")
+        # 3) Удаляем записи DNS из hosts
+        for domain in self.dns_list:
+            self.run_command(f"sudo sed -i '/{domain}/d' /etc/hosts")
 
-    for device_ip in TARGET_DEVICES:
-        # Блокируем IP-адреса серверов для устройства
-        for ip_range in ROBLOX_IP_RANGES:
-            run_command(f"sudo iptables -A FORWARD -s {device_ip} -d {ip_range} -j DROP")
-            run_command(f"sudo iptables -A OUTPUT -s {device_ip} -d {ip_range} -j DROP")
-            if BLOCK_UDP:
-                run_command(f"sudo iptables -A FORWARD -s {device_ip} -p udp -d {ip_range} -j DROP")
-                run_command(f"sudo iptables -A OUTPUT -s {device_ip} -p udp -d {ip_range} -j DROP")
+        # 4) Перезапускаем резолвер и чистим кэш
+        self.run_command("sudo systemctl restart systemd-resolved")
+        self.run_command("sudo resolvectl flush-caches")
 
-        # Блокируем игровые порты
-        for port in ROBLOX_PORTS:
-            run_command(f"sudo iptables -A FORWARD -s {device_ip} -p udp --dport {port} -j DROP")
-            run_command(f"sudo iptables -A OUTPUT -s {device_ip} -p udp --dport {port} -j DROP")
+        logging.info(f"✅ {self.__class__.__name__} снова доступен!")
 
-    # Блокируем DNS-запросы Roblox
-    if BLOCK_DNS:
-        for domain in DNS_BLOCK:
-            run_command(f"echo '127.0.0.1 {domain}' | sudo tee -a /etc/hosts")
+    def enable_arp_spoofing(self):
+        logging.info(f"🚀 Перенаправляем трафик через {self.interface} для {self.target_devices_list}...")
+        for device_ip in self.target_devices_list:
+            self.run_command(
+                f"cd ~/Programs/bettercap && sudo go run main.go -eval 'set arp.spoof.targets {device_ip}; arp.spoof on' &"
+            )
 
-    # Чистим кэш DNS
-    run_command("sudo systemctl restart systemd-resolved")
-    run_command("sudo resolvectl flush-caches")
+    def disable_arp_spoofing(self):
+        logging.info("⛔ Останавливаем ARP-спуфинг...")
+        self.run_command("sudo pkill bettercap")
 
-    logging.info("✅ Roblox уничтожен для выбранных устройств!")
+    def run_command(self, cmd):
+        try:
+            subprocess.run(cmd, shell=True, check=True)
+            logging.info(f"✅ {cmd}")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"❌ Ошибка: {e}")
 
-def unblock_roblox():
-    """Разблокируем Roblox для выбранных устройств."""
-    logging.info("⛔ Отключаем блокировку Roblox...")
-    run_command("sudo iptables -F")
-    run_command("sudo sed -i '/roblox.com/d' /etc/hosts")
-    run_command("sudo systemctl restart systemd-resolved")
-    run_command("sudo resolvectl flush-caches")
-    logging.info("✅ Roblox снова доступен!")
+class BaseMixinInfo:
+    target_devices_list = ["192.168.1.110"]
 
-def block_tiktok():
-    """Полностью блокируем трафик TikTok ТОЛЬКО для указанных устройств."""
-    logging.info("⛔ Блокируем доступ к TikTok для выбранных устройств...")
+class Roblox(BaseMixinInfo, BaseLocker):
+    dns_list = [
+        "roblox.com",
+        "www.roblox.com",
+        "api.roblox.com",
+        "games.roblox.com",
+        "setup.roblox.com",
+        "assetgame.roblox.com",
+        "presence.roblox.com"
+    ]
+    ip_list = [
+        "128.116.0.0/16",
+        "185.221.0.0/16",
+        "23.82.0.0/16",
+        "45.10.0.0/16",
+        "103.252.0.0/16"
+    ]
 
-    # Блокируем IP-адреса TikTok для устройства
-    for device_ip in TARGET_DEVICES:
-        for ip_range in TIKTOK_IP_RANGES:
-            run_command(f"sudo iptables -A FORWARD -s {device_ip} -d {ip_range} -j DROP")
-            run_command(f"sudo iptables -A OUTPUT -s {device_ip} -d {ip_range} -j DROP")
-            if BLOCK_UDP:
-                run_command(f"sudo iptables -A FORWARD -s {device_ip} -p udp -d {ip_range} -j DROP")
-                run_command(f"sudo iptables -A OUTPUT -s {device_ip} -p udp -d {ip_range} -j DROP")
+class TikTok(BaseMixinInfo, BaseLocker):
+    dns_list = [
+        "tiktok.com",
+        "www.tiktok.com",
+        "api.tiktok.com",
+        "m.tiktok.com",
+        "m.tiktokcdn.com"
+    ]
+    ip_list = [
+        "47.244.0.0/16",
+        "123.206.0.0/16"
+    ]
 
-    # Блокируем DNS-запросы TikTok
-    if BLOCK_DNS:
-        for domain in TIKTOK_DNS:
-            run_command(f"echo '127.0.0.1 {domain}' | sudo tee -a /etc/hosts")
-
-    # Чистим кэш DNS
-    run_command("sudo systemctl restart systemd-resolved")
-    run_command("sudo resolvectl flush-caches")
-
-    logging.info("✅ TikTok уничтожен для выбранных устройств!")
-
-def unblock_tiktok():
-    """Разблокируем TikTok для выбранных устройств."""
-    logging.info("⛔ Отключаем блокировку TikTok...")
-    run_command("sudo sed -i '/tiktok.com/d' /etc/hosts")
-    run_command("sudo iptables -F")
-    run_command("sudo systemctl restart systemd-resolved")
-    run_command("sudo resolvectl flush-caches")
-    logging.info("✅ TikTok снова доступен!")
-
-if __name__ == "__main__":
-    while True:
-        action = input("💀 Введите команду (block/unblock/blocktiktok/unblocktiktok/exit): ").strip().lower()
-        if action == "block":
-            enable_arp_spoofing()
-            block_roblox()
-        elif action == "unblock":
-            disable_arp_spoofing()
-            unblock_roblox()
-        elif action == "blocktiktok":
-            enable_arp_spoofing()
-            block_tiktok()
-        elif action == "unblocktiktok":
-            disable_arp_spoofing()
-            unblock_tiktok()
-        elif action == "exit":
-            disable_arp_spoofing()
-            break
-        else:
-            print("🚨 Неправильная команда! Используйте 'block', 'unblock', 'blocktiktok', 'unblocktiktok' или 'exit'")
+class Facebook(BaseMixinInfo, BaseLocker):
+    dns_list = [
+        "facebook.com",
+        "www.facebook.com",
+        "api.facebook.com",
+        "m.facebook.com",
+        "m.facebook.com"
+    ]
+    
