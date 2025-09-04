@@ -1,6 +1,7 @@
 ![throttle_banner](./assets/banner.png)
 
 # 🔒 Device Access Locker
+![Throttle Guard](https://img.shields.io/badge/CONTROL-NET-003366?style=for-the-badge&labelColor=111111)
 
 > _"Block specific apps and platforms on selected devices in your LAN using iptables, ARP spoofing, and DNS overrides."_  
 
